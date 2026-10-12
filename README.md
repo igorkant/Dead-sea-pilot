@@ -4,6 +4,17 @@ Interactive 3D visualisation of the XtraLit direct-lithium-extraction pilot on D
 water, fed from an accumulation pond. Feed Li ≈ 18 ppm.
 
 
+## Using the page
+
+Press **Tour** in the bottom bar (or the T key) for a guided tour in 14 short steps: what the
+3D view shows, the columns and the carousel, each process step with its pipe colour
+(sorption, water wash, desorption, NaCl wash at pH 10), the valve battery, the analysers and the HMI — then the
+controls: run / pause / speed, how to highlight one step, how to hide the labels or the panels,
+and the camera. Each step rings the control it talks about or flies the camera to the
+equipment and pins markers on it; the page stays fully usable while the tour is open.
+← / → step through, Esc closes. A link can open the tour at a given step: `index.html?tour=5`.
+**Help** (or ?) has the same on one page and a button into the tour.
+
 ## The skid
 
 One skid, built like a factory ultrafiltration unit, carries the whole process side:

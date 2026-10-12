@@ -236,7 +236,7 @@
     <div id="helpBody">
       <p><b>What you see.</b> A lithium extraction pilot on one skid: Dead Sea water from the pond → pump P-101 → filters 50 → 10 → 1 µm → UF → NMR-in analyser → valve battery → 8 columns C1–C8. Water, acid and NaCl come from pumps P-201, P-301 and P-401. The columns run as a carousel: each takes its turn through sorption → water wash → desorption → NaCl wash (pH 10, until the outlet is back to pH ≈ 7).</p>
       <p><b>Pipe colour = medium:</b> <span class="cs" style="background:var(--brine)"></span>blue — brine, <span class="cs" style="background:var(--wash)"></span>light blue — water wash, <span class="cs" style="background:var(--acid)"></span>orange — acid, <span class="cs" style="background:var(--nacl)"></span>green — NaCl wash, <span class="cs" style="background:var(--eluate)"></span>yellow — eluate (product), <span class="cs" style="background:var(--sulfate)"></span>grey — sulfate. <span class="cs" style="background:#7d8790"></span>A grey column on the chart means Hold (stopped on breakthrough).</p>
-      <p><b>Bottom bar:</b> ▶/⏸ — run/pause the carousel · ×0.5/×1/×2 — speed (at ×1, one process hour = 20 s) · Transparent — see-through walls, flow visible inside pipes and columns · 🏷 — show/hide labels above the equipment · ◴ — auto-rotate · ⌂ — reset camera · Hide/Show — hide/bring back all panels · Help — this guide.</p>
+      <p><b>Bottom bar:</b> ▶/⏸ — run/pause the carousel · ×0.5/×1/×2 — speed (at ×1, one process hour = 20 s) · Transparent — see-through walls, flow visible inside pipes and columns · 🏷 — show/hide labels above the equipment · ◴ — auto-rotate · ⌂ — reset camera · Hide/Show — hide/bring back all panels · Help — this guide · Tour (or T) — a step-by-step guided tour that points at each control.</p>
       <p><b>Viewing one step:</b> there are no separate mode buttons — all steps run at once in different columns. Click a row in the Flow streams legend (right) or a bar in the Carousel chart (bottom right): that step's pipes light up and the rest dims. Click again to clear.</p>
       <p><b>Mouse:</b> drag — orbit · wheel — zoom · right-drag — pan · hover — unit name · click — details card.</p>
       <p><b>Panels</b> can be dragged. HMI (top left) — live readings: pumps, NMR in and out, breakthrough set-point, valves. Process snapshot — headline figures.</p>
@@ -1041,6 +1041,221 @@ makeDraggable(el('modebar'),el('mbDrag'));
       if(sr.height&&hb+8>sr.top)st.style.visibility='hidden';}};
   fit();addEventListener('resize',fit);setTimeout(fit,400);})();
 
+/* ---------- TOUR — guided tour (English). A step panel at the top that rings the controls it talks about, flies the camera and pins
+   DOM markers on the equipment; every number comes from ARM / SCHED / LAYOUT. No backdrop: the page stays fully usable while it is open.
+   Opens from the Tour button (or T), the button in Help, or ?tour=N in the URL (N = 1-based step). Closing restores the camera and
+   the step highlight the tour set (the viewer's own clicks are kept). API: window.PILOT_TOUR {open(i), close(), next(), back(), state()} ---------- */
+const TOUR_CSS=`
+#btnTour{color:var(--accent);border-color:#21d4c466;font-weight:600}
+#btnTour[data-on="1"]{background:#21d4c41f;border-color:var(--accent)}
+#tour{position:fixed;top:16px;left:12px;width:380px;z-index:15;padding:0;display:none;touch-action:auto}
+#tour.show{display:block}
+#tourHead{display:flex;align-items:flex-start;gap:10px;padding:12px 12px 4px 16px}
+#tourHead h2{margin:.25em 0 0;font-size:15px;font-weight:650;line-height:1.2;letter-spacing:-.005em}
+#tourX{margin-left:auto;flex:none;appearance:none;border:1px solid var(--stroke);background:#0e1721;color:var(--muted);width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:16px;line-height:1}
+#tourX:hover{color:var(--ink);border-color:#33485a}
+#tourBody{padding:4px 16px 0;font-size:12.5px;line-height:1.5;color:#c9d6de;max-height:42vh;overflow-y:auto}
+#tourBody b{color:var(--ink);font-weight:600}
+#tourBody .cs{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+#tourLive{font-family:var(--mono);font-size:10.5px;color:var(--accent);padding:7px 16px 0}
+#tourLive:empty{display:none}
+#tourTry{margin:9px 16px 0;padding:6px 10px;border:1px dashed #21d4c488;border-radius:8px;font-size:12px;color:var(--accent);display:none}
+#tourTry.show{display:block} #tourTry.done{border-style:solid;background:#21d4c418}
+#tourFoot{display:flex;align-items:center;gap:6px;padding:11px 12px 12px 16px}
+#tourDots{display:flex;gap:3px;flex-wrap:wrap;margin-right:auto}
+#tourDots i{width:6px;height:6px;border-radius:50%;background:#2a3a46;cursor:pointer}
+#tourDots i.on{background:var(--accent)} #tourDots i.seen{background:#1f6f69}
+.tbtn{appearance:none;border:1px solid var(--stroke);background:#0e1721;color:var(--ink);height:30px;padding:0 12px;border-radius:8px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.tbtn:hover{border-color:#33485a} .tbtn:disabled{opacity:.35;cursor:default}
+.tbtn.pri{border-color:var(--accent);color:var(--accent)}
+#helpTour{margin-left:auto}
+#helpTour+#helpClose{margin-left:0}
+.tourRing{position:fixed;z-index:14;pointer-events:none;border:2px solid var(--accent);border-radius:11px;display:none;animation:tourPulse 1.4s ease-in-out infinite}
+@keyframes tourPulse{0%,100%{box-shadow:0 0 0 0 #21d4c4b0}50%{box-shadow:0 0 0 7px #21d4c400}}
+.tourMk{position:fixed;z-index:4;pointer-events:none;display:none;width:0;height:0}
+.tourMk .d{position:absolute;left:-8px;top:-8px;width:16px;height:16px;border-radius:50%;border:2px solid var(--accent);background:#21d4c433;box-sizing:border-box;animation:tourPulse 1.4s ease-in-out infinite}
+.tourMk.l .t{left:auto;right:12px}
+.tourMk .t{position:absolute;left:12px;top:-21px;white-space:nowrap;font-size:11px;font-weight:600;color:var(--ink);background:#0a131add;border:1px solid #21d4c488;border-radius:6px;padding:2px 7px}
+body.help-open #tour,body.help-open .tourRing,body.help-open .tourMk{display:none!important}
+@media (prefers-reduced-motion:reduce){.tourRing,.tourMk .d{animation:none}}
+`;
+const PILOT_TOUR=(function(){
+  const st=document.createElement('style');st.textContent=TOUR_CSS;document.head.appendChild(st);
+  const fmtH=h=>h<1?Math.round(h*60)+' min':h.toFixed(2)+' h';
+  const sw=c=>'<span class="cs" style="background:'+hx(c)+'"></span>';
+  const cn=a=>a.length?a.map(c=>'C'+(c+1)).join(' '):'none right now';
+  const d=ARM.dur,SET=(ARM.ppm*BT_SET).toFixed(1),W2N=NACL?'NaCl wash':'water wash 2';
+  const SRC=ARM.pondSrc||('Great Salt Lake '+ARM.name.toLowerCase()+' brine');
+  const h1=document.querySelector('#brand h1'),NAME=h1?h1.textContent:'DLE pilot';
+  const HOMEV={t:HOME.target.toArray(),r:HOME.r,th:HOME.t,ph:HOME.p};
+  const OVER={t:[-2.5,1.4,0],r:38,th:0.3,ph:0.86};                   // the whole skid side-on: pond on the left, tanks on the right
+  const BATTERY=[0,2.6,0];
+  // live line under the body: which columns are in the highlighted step right now
+  const liveStep=(step,name)=>()=>{const on=[],hold=[];snap.st.forEach((s,c)=>{if(s.step===step)on.push(c);else if(step==='sorption'&&s.step==='hold')hold.push(c);});
+    return 'Now on '+name+': '+cn(on)+(hold.length?' · hold: '+cn(hold):'');};
+  /* steps: title, body (HTML), cam ('home' | {t,r,th,ph} | none = stay), quiet (close-up: scene labels hidden for the step, readings kept), ui (selector → one ring per element; [selectors] → one ring
+     round them all), marks [[Object3D | [x,y,z], text, 'l' = text on the left]], hl (step to highlight | null = clear | none = leave), try {sel, txt, ok}, live () → text */
+  const S=[
+    {title:'What you are looking at',cam:OVER,hl:null,
+     body:'A live 3D model of the <b>'+NAME+'</b>: one skid that extracts lithium from '+SRC+' (feed Li ≈ '+ARM.ppm+' ppm). '+
+       'In this view the feed runs from left to right: <b>pond → pump P-101 → filters → valve battery → 8 columns</b>; products and tails collect in the tanks on the right. '+
+       'Everything moves on a process clock.<br>Use <b>Next</b> / <b>Back</b> or the ← → keys; Esc closes. The page stays fully usable while the tour is open.',
+     marks:[[pondG,'Accumulation pond'],[p101,'P-101 brine pump'],[[-8.3,1.6,0],'Filtration 50 → 10 → 1 µm → UF'],[BATTERY,'Valve battery'],
+       [cols[1],'Bank A · C1–C4'],[cols[6],'Bank B · C5–C8'],[eluateT,'Product & tail tanks']]},
+    {title:'Eight columns in two banks',cam:{t:[0,2.4,0],r:16,th:0.3,ph:1.08},quiet:true,hl:null,
+     body:'<b>C1–C4</b> stand in bank A, <b>C5–C8</b> in bank B, either side of the valve battery. Each is a radial-flow vessel (~20 L, 20 kg of LMO sorbent) with just three pipes: '+
+       'the <b>brine line</b> and the <b>service line</b> ('+SVC+') tee into the top nozzle; one <b>outlet line</b> leaves the bottom through its flowmeter FT. '+
+       'Every step runs <b>top → down</b>. Click a column for its card; <b>Transparent</b> shows the quarter-section.',
+     marks:[[[0,CB+2.4,-ZC],'Bank A · C1–C4'],[[0,CB+2.4,ZC],'Bank B · C5–C8'],[[COLX[3]-0.15,TOPN+0.1,ZC],'top nozzle: brine + service line'],[fts[7],'FT-8 on the outlet line']]},
+    {title:'The carousel',cam:'home',hl:null,ui:['#carousel'],
+     body:'All eight columns run the same cycle, <b>P = '+ARM.P.toFixed(2)+' h</b>, each one <b>P/8 = '+fmtH(SLOT)+'</b> behind its neighbour: '+
+       'sorption ('+fmtH(d.sorption)+') → '+W1+' ('+fmtH(d.wash)+') → desorption ('+fmtH(d.desorb)+') → '+W2N+' ('+fmtH(d.wash2)+'). '+
+       'So at any moment <b>'+SORB_TXT+' of 8</b> columns are on sorption while the rest regenerate.<br>'+
+       'The <b>Carousel</b> chart (bottom right): one row per column, colour = step, the white line = now. A grey bar is a <b>hold</b> after a stop on breakthrough.',
+     live:()=>'cycle '+(Math.floor(snap.tH/ARM.P)+1)+' · t '+snap.tH.toFixed(2)+' h · on sorption: '+cn(snap.sorbing)},
+    {title:'Step 1 — sorption',cam:OVER,hl:'sorption',ui:['.lrow[data-step="sorption"]'],
+     body:sw(C.brine)+'<b>Blue = brine.</b> P-101 pumps it through the filters and past NMR-in into the brine header; each sorbing column takes <b>'+ARM.brinePerCol+' m³/h</b> into its top, '+
+       'through the bed and out of the bottom to the <b>spent-brine</b> tank. Sorption lasts up to <b>'+ARM.sorbTxt+'</b> and loads '+CAP_TXT+' Li. '+
+       '<b>NMR-out</b> samples the outlets in turn; when one reaches <b>'+SET+' ppm</b> ('+Math.round(BT_SET*100)+' % of the feed) the PLC stops that column early and it <b>holds</b> (grey, valves shut) until its slot ends.<br>'+
+       'The highlight dims every other step.',
+     marks:[[pondG,'Pond'],[p101,'P-101'],[nmrOut,'NMR-out'],[spentT,'Spent brine']],live:liveStep('sorption','sorption')},
+    {title:'Step 2 — '+W1,cam:OVER,hl:'wash',ui:['.lrow[data-step="wash"]'],
+     body:sw(C.wash)+'<b>Light blue = fresh water.</b> P-201 pushes the brine left in the bed down to the spent-brine tank, '+ARM.washPerCol+' m³/h per column. '+
+       '<b>EC-101</b> on the spent line ends the wash when the conductivity has dropped to its set-point ('+fmtH(d.wash)+' in the schedule).',
+     marks:[[freshT,'Fresh water'],[p201,'P-201'],[ecMeter,'EC-101'],[spentT,'Spent brine']],live:liveStep('wash',W1)},
+    {title:'Step 3 — desorption',cam:OVER,hl:'desorb',ui:['.lrow[data-step="desorb"]','#fractab'],
+     body:sw(C.acid)+'<b>Orange = 0.8 M H₂SO₄.</b> P-301 sends the acid down the service line into the top, the same way as the brine'+(DES_MAX>1?', up to '+DES_MAX+' columns at once':'')+'. '+
+       'It strips the lithium in '+fmtH(d.desorb)+', taken as <b>5 timed fractions</b>: '+sw(C.eluate)+'Fr-2 and Fr-3 are lithium-rich and go to the <b>eluate</b> tank (~6000 ppm Li, ≈'+ARM.enrich+'× the feed); '+
+       sw(C.sulfate)+'Fr-1, Fr-4 and Fr-5 go to <b>sulfate</b>. While a column desorbs, the legend shows the fraction table with the current one marked.',
+     marks:[[acidT,'H₂SO₄ 0.8 M'],[p301,'P-301'],[eluateT,'Eluate (product)'],[sulfateT,'Sulfate (tails)']],live:liveStep('desorb','desorption')},
+    NACL?{title:'Step 4 — NaCl wash, pH 10',cam:OVER,hl:'wash2',ui:['.lrow[data-step="wash2"]'],
+     body:sw(C.nacl)+'<b>Green = NaCl at pH 10.</b> After the acid, P-401 sends NaCl solution from tank <b>T-401</b> along its own header and the service line into the top; the effluent goes to the <b>sulfate</b> tank. '+
+       '<b>pH-101</b> on the sulfate line ends the wash when the outlet is back to <b>pH ≈ 7</b> ('+fmtH(d.wash2)+' in the schedule). '+
+       'So the next brine never meets an acidic bed — in a bromide-rich brine Mn(IV) would oxidise Br⁻ to Br₂.',
+     marks:[[naclT,'T-401 NaCl pH 10'],[p401,'P-401'],[phMeter,'pH-101'],[sulfateT,'Sulfate']],live:liveStep('wash2','NaCl wash')}
+    :{title:'Step 4 — water wash 2',cam:OVER,hl:'wash2',ui:['.lrow[data-step="wash2"]'],
+     body:sw(C.wash2)+'<b>Green-cyan = water wash 2.</b> After the acid, P-201 rinses the bed again with fresh water down the service line; the rinse goes to the <b>sulfate</b> tank. '+
+       '<b>pH-101</b> on the sulfate line ends it once the outlet pH is back above 6 ('+fmtH(d.wash2)+' in the schedule). Then the column is ready for brine again.',
+     marks:[[freshT,'Fresh water'],[p201,'P-201'],[phMeter,'pH-101'],[sulfateT,'Sulfate']],live:liveStep('wash2','water wash 2')},
+    {title:'The valve battery',cam:{t:[0,2.4,0],r:13,th:1.2,ph:0.55},quiet:true,hl:null,ui:['#hValves'],
+     body:'The middle of the skid: <b>feed headers</b> run high ('+FEED_HDRS.join(', ').replace('nacl','NaCl')+'), <b>collect headers</b> low (spent, eluate, sulfate). '+
+       'Each column has <b>'+NV+' actuated valves</b> here — '+NVT+' in all, none on the columns; the PLC opens one inlet and one outlet per column for its step. '+
+       '<b>An open actuator takes the colour of its medium; a shut one is grey.</b> The HMI counts the open ones. Click any valve to see its duty.',
+     marks:[[[HX0,HDR.brine.y+0.25,ZH],'Feed headers (high)'],[[HX1,HDR.eluate.y,ZH],'Collect headers (low)'],[valves[5].brineIn,'Brine-in valve · C6']]},
+    {title:'Analysers and control',cam:{t:[3.8,1.6,0.6],r:13,th:1.05,ph:0.95},quiet:true,hl:null,
+     body:'At the outlet end a thin sample line taps every column\'s outlet: the <b>sample selector</b> passes the sorbing columns one by one to <b>NMR-out</b>, whose screen shows that column\'s outlet Li '+
+       '(orange near the '+SET+' ppm stop set-point). <b>EC-101</b> on the spent line ends the '+W1+', <b>pH-101</b> on the sulfate line ends the '+W2N+'. '+
+       'The <b>PLC cabinet</b> runs the whole carousel on its own.',
+     marks:[[selector,'Sample selector','l'],[nmrOut,'NMR-out'],[ecMeter,'EC-101'],[phMeter,'pH-101'],[plcUnit,'PLC']]},
+    {title:'Live readings and key figures',cam:'home',hl:null,ui:['#hmi','#stats'],
+     body:'<b>HMI</b> (left, live): columns on sorption, pump duties (P-101 brine, P-201 water, P-301 acid'+(NACL?', P-401 NaCl':'')+'), NMR-in · out, the stop set-point ('+SET+' ppm) with the average recovery, '+
+       'EC-101 · pH-101 and the open valves; below them the last stop on breakthrough.<br><b>Process snapshot</b>: the headline figures — '+CAP_TXT+' Li capacity, >85 % recovery, eluate ~6000 ppm, '+
+       '~'+KG_CYCLE+' kg Li₂CO₃ per cycle, '+ARM.cyclesDay+' cycles and ~'+ARM.liDay+' kg Li₂CO₃ a day. (On short screens the snapshot steps aside for the HMI.)'},
+    {title:'Run, pause and speed',cam:'home',ui:[['#btnPlay','.spd','#clock']],
+     body:'The <b>process clock</b> (t … h) drives everything on the page. <b>⏸ / ▶</b> pauses and runs it. <b>×0.5 · ×1 · ×2</b> set the speed — at ×1 one process hour takes 20 s, '+
+       'so a full '+ARM.P.toFixed(2)+' h cycle takes '+Math.round(ARM.P/H_PER_S)+' s. Pause to read the valves and pipes at leisure.',
+     try:{sel:'#btnPlay, .spd',txt:'Try it: click ⏸ to pause the clock (▶ runs it again), or pick a speed.',ok:'Done — the clock follows your choice.'}},
+    {title:'Show one step at a time',hl:null,ui:[['#legend .lrow[data-step]'],'#gantt'],
+     body:'There is no mode switch: all steps run at once, in different columns. To follow one, <b>click its row in Flow streams</b> (top right) or <b>a bar in the Carousel chart</b> — '+
+       'that step\'s pipes, valves and bars light up and the rest dims. Click the same row or bar again to show everything.',
+     try:{sel:'.lrow[data-step], #gantt',txt:'Try it: click a row in Flow streams, then click it again to clear.',ok:'Done — click the same row again to show all steps.'}},
+    {title:'Labels, see-through, panels',ui:['#btnLabels','#btnXray','#btnPanels'],
+     body:'<b>🏷</b> hides or shows the labels above the equipment and the column tags. <b>Transparent</b> makes pipe walls, column shells and tank walls see-through, so the flow shows inside. '+
+       '<b>Hide</b> clears all panels for an open view; the same button (now <b>Show</b>) brings them back. Drag the bottom bar by <b>⠿</b>.',
+     try:{sel:'#btnLabels',txt:'Try it: click 🏷 to hide the labels (click again to bring them back).',ok:'Done — 🏷 toggles them back.'}},
+    {title:'Camera and details',ui:['#btnRot','#btnReset','#btnHelp','#btnTour'],
+     body:'<b>Drag</b> to orbit, <b>scroll</b> to zoom, <b>right-drag</b> (or Shift-drag) to pan; on a touch screen use one and two fingers. <b>Hover</b> any equipment for its name, <b>click</b> it for a details card. '+
+       '<b>◴</b> auto-rotates, <b>⌂</b> resets the view.<br><b>Help</b> (or ?) has all of this on one page; <b>Tour</b> (or T) brings this guide back.',
+     try:{sel:'#btnReset',txt:'Try it: orbit away, then click ⌂.',ok:'Done — that is the home view.'}}
+  ];
+  const N=S.length;
+  // DOM: Tour button after Help, the panel, a button in the Help header
+  const btn=document.createElement('button');btn.className='ibtn';btn.id='btnTour';btn.dataset.on='0';btn.textContent='Tour';btn.title='Guided tour: what you see and what to click (T)';
+  const hb=el('btnHelp');if(hb)hb.insertAdjacentElement('afterend',btn);else el('modebar').appendChild(btn);
+  const P=document.createElement('div');P.id='tour';P.className='panel';P.setAttribute('role','dialog');P.setAttribute('aria-labelledby','tourTitle');
+  P.innerHTML='<div id="tourHead"><div><div class="eyebrow" id="tourStep"></div><h2 id="tourTitle"></h2></div><button id="tourX" title="Close the tour (Esc)">×</button></div>'+
+    '<div id="tourBody"></div><div id="tourLive"></div><div id="tourTry"></div>'+
+    '<div id="tourFoot"><div id="tourDots"></div><button class="tbtn" id="tourBack">◂ Back</button><button class="tbtn pri" id="tourNext">Next ▸</button></div>';
+  document.body.appendChild(P);
+  for(let i=0;i<N;i++){const dt=document.createElement('i');dt.title=(i+1)+'. '+S[i].title;dt.onclick=()=>go(i);el('tourDots').appendChild(dt);}
+  const hh=el('helpHead'),hc=el('helpClose');
+  if(hh&&hc){const b=document.createElement('button');b.id='helpTour';b.className='tbtn pri';b.textContent='Take the tour ▸';b.title='Step-by-step guided tour';
+    hh.insertBefore(b,hc);b.onclick=()=>{hc.click();open(0);};}
+
+  let isOpen=false,cur=0,seen=new Set(),saved=null,tourHl,fly=null,rings=[],marks=[],tryT=0,hushed=[];
+  const READINGS=new Set([nmrInDisp,nmrOutDisp,ecDisp,phDisp]);
+  function quiet(on){if(!on){hushed.forEach(o=>{o.visible=true;});hushed=[];return;}
+    labelGroup.children.forEach(o=>{if(!READINGS.has(o)&&o.visible){o.visible=false;hushed.push(o);}});}
+  const v3=new T.Vector3(),box3=new T.Box3(),mkPos=new Map();
+  function flyTo(g){if(!g)return;if(g==='home')g=HOMEV;
+    fly=new T.Vector3().fromArray(g.t);ctrl.tR=g.r;ctrl.tP=g.ph;ctrl.tT=g.th+2*Math.PI*Math.round((ctrl.tT-g.th)/(2*Math.PI));}
+  function clearStep(){rings.forEach(r=>r.div.remove());marks.forEach(m=>m.div.remove());rings=[];marks=[];clearTimeout(tryT);quiet(false);}
+  function anchor(a){if(Array.isArray(a))return new T.Vector3().fromArray(a);
+    if(!mkPos.has(a)){a.updateMatrixWorld(true);box3.setFromObject(a);mkPos.set(a,box3.getCenter(new T.Vector3()));}return mkPos.get(a);}
+  function go(i){i=Math.max(0,Math.min(N-1,i|0));const wasClose=isOpen&&S[cur].quiet;cur=i;seen.add(i);const s=S[i];clearStep();
+    (s.ui||[]).forEach(u=>{const sels=Array.isArray(u)?u:[u];const els=[];sels.forEach(q=>document.querySelectorAll(q).forEach(e=>els.push(e)));
+      const groups=Array.isArray(u)?[els]:els.map(e=>[e]);
+      groups.forEach(g=>{if(!g.length)return;const div=document.createElement('div');div.className='tourRing';document.body.appendChild(div);rings.push({div,els:g});});});
+    (s.marks||[]).forEach(m=>{if(!m[0])return;const div=document.createElement('div');div.className='tourMk'+(m[2]==='l'?' l':'');div.innerHTML='<div class="d"></div><div class="t"></div>';
+      div.lastChild.textContent=m[1];document.body.appendChild(div);marks.push({div,p:anchor(m[0])});});
+    if(s.hl!==undefined){setHighlight(s.hl);tourHl=state.hl;}
+    if(s.cam)flyTo(s.cam);else if(wasClose)flyTo('home');          // never leave a stay-put step stuck in a close-up
+    if(s.quiet)quiet(true);
+    el('tourStep').textContent='Tour · '+(i+1)+' / '+N;el('tourTitle').textContent=s.title;el('tourBody').innerHTML=s.body;el('tourBody').scrollTop=0;
+    const tr=el('tourTry');tr.classList.toggle('show',!!s.try);tr.classList.remove('done');tr.textContent=s.try?s.try.txt:'';
+    el('tourLive').textContent=s.live?s.live():(s.quiet?'Scene labels are off for this close-up; they come back on the next step.':'');
+    el('tourBack').disabled=i===0;el('tourNext').textContent=i===N-1?'Finish':'Next ▸';
+    Array.from(el('tourDots').children).forEach((dt,k)=>{dt.className=k===i?'on':(seen.has(k)?'seen':'');});
+    tick();}
+  function open(i){if(!isOpen){saved={t:ctrl.target.toArray(),r:ctrl.tR,th:ctrl.tT,ph:ctrl.tP,hl:state.hl};tourHl=undefined;
+      if(document.body.classList.contains('panels-hidden'))el('btnPanels').click();    // the tour points at the panels
+      const hn=el('hint');if(hn)hn.style.opacity='0';}
+    isOpen=true;P.classList.add('show');btn.dataset.on='1';go(i===undefined?cur:i);}
+  function close(){if(!isOpen)return;isOpen=false;P.classList.remove('show');btn.dataset.on='0';clearStep();
+    if(tourHl!==undefined&&state.hl===tourHl)setHighlight(saved.hl);          // undo only the tour's own highlight
+    flyTo(saved);if(cur===N-1)cur=0;}
+  function next(){if(!isOpen)return;if(cur===N-1)close();else go(cur+1);}
+  function back(){if(isOpen&&cur>0)go(cur-1);}
+  btn.onclick=()=>isOpen?close():open();
+  el('tourX').onclick=close;el('tourNext').onclick=next;el('tourBack').onclick=back;
+  // the viewer takes the camera: stop flying
+  dom.addEventListener('mousedown',()=>{fly=null;});dom.addEventListener('touchstart',()=>{fly=null;},{passive:true});
+  el('btnReset').addEventListener('click',()=>{fly=null;});
+  // "Try it": a click on the named control ticks the step and moves on after a moment (another click restarts the wait)
+  document.addEventListener('click',e=>{if(!isOpen||!e.target.closest)return;const s=S[cur];if(!s.try||!e.target.closest(s.try.sel))return;
+    const tr=el('tourTry');tr.classList.add('done');tr.textContent='✓ '+s.try.ok;clearTimeout(tryT);const at=cur;
+    if(at<N-1)tryT=setTimeout(()=>{if(isOpen&&cur===at)go(at+1);},2600);},true);
+  // keys, on document in the capture phase — ahead of Help's own window listener, so Esc with Help open only closes Help: ← → step, Esc close, T toggle
+  document.addEventListener('keydown',e=>{if(e.target.closest&&e.target.closest('input,textarea,select'))return;if(e.ctrlKey||e.metaKey||e.altKey)return;
+    if(document.body.classList.contains('help-open'))return;
+    if(e.key==='t'||e.key==='T'){isOpen?close():open();return;}
+    if(!isOpen)return;
+    if(e.key==='ArrowRight'){next();e.preventDefault();}else if(e.key==='ArrowLeft'){back();e.preventDefault();}else if(e.key==='Escape')close();},true);
+  function shown(e){const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'?r:null;}
+  function place(){const ph=P.offsetHeight||240,W=Math.min(380,innerWidth-24);let L=12,R=innerWidth-12;
+    ['brand','legend'].forEach(id=>{const e=el(id),r=e&&shown(e);if(!r||r.top>ph+24)return;
+      if(r.right<innerWidth/2+60)L=Math.max(L,r.right+12);else R=Math.min(R,r.left-12);});
+    let w=W,x=(innerWidth-W)/2;if(R-L>=300){w=Math.min(380,R-L);x=L+(R-L-w)/2;}
+    P.style.width=w+'px';P.style.left=Math.round(x)+'px';
+    // keep clear of the Carousel chart and the bottom bar below it: the body scrolls instead (never shorter than 110 px)
+    let floor=innerHeight-12;['carousel','modebar'].forEach(id=>{const e=el(id),r=e&&shown(e);if(r&&r.left<x+w&&r.right>x&&r.top>60)floor=Math.min(floor,r.top-10);});
+    const B=el('tourBody'),rest=P.offsetHeight-B.offsetHeight;B.style.maxHeight=Math.max(110,floor-P.offsetTop-rest)+'px';}
+  function tick(){
+    if(fly){ctrl.target.lerp(fly,0.1);if(ctrl.target.distanceTo(fly)<0.01){ctrl.target.copy(fly);fly=null;}}
+    if(!isOpen)return;
+    place();
+    rings.forEach(rg=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;rg.els.forEach(e=>{const r=shown(e);if(!r)return;x0=Math.min(x0,r.left);y0=Math.min(y0,r.top);x1=Math.max(x1,r.right);y1=Math.max(y1,r.bottom);});
+      const s=rg.div.style;if(x1<x0){s.display='none';return;}
+      s.display='block';s.left=(x0-5)+'px';s.top=(y0-5)+'px';s.width=(x1-x0+10)+'px';s.height=(y1-y0+10)+'px';});
+    camera.updateMatrixWorld();
+    marks.forEach(m=>{v3.copy(m.p).project(camera);const s=m.div.style;
+      if(v3.z>1||Math.abs(v3.x)>1.02||Math.abs(v3.y)>1.02){s.display='none';return;}
+      s.display='block';s.left=((v3.x+1)/2*innerWidth)+'px';s.top=((1-v3.y)/2*innerHeight)+'px';});
+    const s=S[cur];if(s.live)el('tourLive').textContent=s.live();}
+  const m=/[?&#]tour(?:=(\d+))?/.exec(location.search+location.hash);
+  if(m)setTimeout(()=>open((parseInt(m[1],10)||1)-1),0);              // deep link ?tour=N — after the intro camera is set
+  const api={open:i=>open(i===undefined?cur:i),close,next,back,tick,state:()=>({open:isOpen,step:cur,steps:N,title:S[cur].title,titles:S.map(x=>x.title)})};
+  window.PILOT_TOUR=api;return api;})();
 /* fix: never frustum-cull (prevents model vanishing at some camera angles) */
 scene.traverse(o=>{o.frustumCulled=false;});
 
@@ -1061,7 +1276,7 @@ function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDel
   scene.traverse(o=>{if(o.userData&&o.userData.wave)o.material.opacity=0.74+0.06*Math.sin(performance.now()*0.0015);});
   uiTick+=dt;if(uiTick>0.12){uiTick=0;refreshUI();}
   {const b=performance.now()*0.004;const L=plcUnit.userData.leds;L[0].emissiveIntensity=0.45+0.55*Math.abs(Math.sin(b));L[2].emissiveIntensity=0.4+0.6*(0.5+0.5*Math.sin(b*1.7+1));}
-  applyCam();renderer.render(scene,camera);}
+  PILOT_TOUR.tick();applyCam();renderer.render(scene,camera);}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}
 addEventListener('resize',resize);
 snap=takeSnap(state.tH);paintValves();setXray(false);applyCam();animate();
